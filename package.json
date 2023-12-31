@@ -35,5 +35,8 @@
   },
   "scripts": {
     "build": "rm -rf build && node-gyp configure && node-gyp build"
+  },
+  "publishConfig": {
+    "@kojibuta:registry": "https://npm.pkg.github.com"
   }
 }
