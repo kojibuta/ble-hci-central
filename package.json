@@ -15,7 +15,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/kojibuta/ble-hci-central.git"
+    "url": "git+https://github.com/kojibuta/ble-hci-central.git"
   },
   "homepage": "https://github.com/kojibuta/ble-hci-central#readme",
   "keywords": [
@@ -34,8 +34,5 @@
   },
   "scripts": {
     "build": "rm -rf build && node-gyp configure && node-gyp build"
-  },
-  "publishConfig": {
-    "@kojibuta:registry": "https://npm.pkg.github.com"
   }
 }
