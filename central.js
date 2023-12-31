@@ -27,6 +27,7 @@ class Central extends EventEmitter {
     this._hci.on("start", this.onStart.bind(this));
     this._hci.on("stop", this.onStop.bind(this));
     this._hci.on("reset", this.onReset.bind(this));
+    this._hci.on("error", this.onError.bind(this));
     this._hci.on("readBdAddr", this.onReadBdAddr.bind(this));
     this._hci.on("leSetScanParameters", this.onLeSetScanParameters.bind(this));
     this._hci.on("leSetScanEnable", this.onLeSetScanEnable.bind(this));
@@ -93,6 +94,10 @@ class Central extends EventEmitter {
 
   onReset(status) {
     this.emit("reset", status);
+  }
+
+  onError(error) {
+    this.emit("error", error);
   }
 
   onReadBdAddr(addressType, address) {

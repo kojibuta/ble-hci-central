@@ -24,6 +24,9 @@ export declare function reset(): void;
 export declare function on(event: "reset", listener: (status: number) => void): events.EventEmitter;
 export declare function once(event: "reset", listener: (status: number) => void): events.EventEmitter;
 
+export declare function on(event: "error", listener: (error: Error) => void): events.EventEmitter;
+export declare function once(event: "error", listener: (error: Error) => void): events.EventEmitter;
+
 export declare function on(event: "address", listener: (addressType: number, address: string) => void): events.EventEmitter;
 export declare function once(event: "address", listener: (addressType: number, address: string) => void): events.EventEmitter;
 

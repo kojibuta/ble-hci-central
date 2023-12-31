@@ -212,8 +212,8 @@ class Hci extends EventEmitter {
     this._aclConnections = {};
     this._aclQueue = [];
     this._socket = new HciSocket();
-    this._socket.on("data", this.onSocketData.bind(this));
     this._socket.on("error", this.onSocketError.bind(this));
+    this._socket.on("data", this.onSocketData.bind(this));
   }
 
   availableL2Sockets() {
@@ -263,19 +263,21 @@ class Hci extends EventEmitter {
   }
 
   onSocketError(error) {
-    debug("Hci.onSocketError: %o", error);
-    if (error.code === "EPERM") {
-      this.stop();
-    } else if (error.message === "Network is down") {
+    debug("Hci.onSocketError: error %o", error);
+
+    this.emit("error", error);
+
+    if (error.code === "EPERM" || error.message === "Network is down") {
       this.stop();
     } else if (error.message === "L2SocketNotConnected") {
+      // WARNING: this error often requires a system reboot
       this.stop();
     }
   }
 
   onSocketData(data) {
     try {
-      // debug("Hci.onSocketData: %o", data.toString("hex"));
+      // debug("Hci.onSocketData: data %o", data.toString("hex"));
       // uint8_t evt_type;
       // ...
       const eventType = data.readUInt8(0);
