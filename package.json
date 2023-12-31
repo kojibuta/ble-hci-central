@@ -1,0 +1,39 @@
+{
+  "name": "ble-hci-central",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "types": "./index.d.ts",
+  "gypfile": true,
+  "author": "Roberto Cerfogli <r.cerfogli@gmail.com>",
+  "license": "MIT",
+  "maintainers": [
+    {
+      "name": "Roberto Cerfogli",
+      "email": "r.cerfogli@gmail.com",
+      "url": "https://github.com/kojibuta"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kojibuta/ble-hci-central.git"
+  },
+  "homepage": "https://github.com/kojibuta/ble-hci-central#readme",
+  "keywords": [
+    "HCI",
+    "Bluetooth",
+    "BLE",
+    "Linux"
+  ],
+  "os": [
+    "linux",
+    "darwin"
+  ],
+  "dependencies": {
+    "debug": "^4.3.4",
+    "nan": "^2.18.0"
+  },
+  "scripts": {
+    "build": "rm -rf build && node-gyp configure && node-gyp build"
+  }
+}
