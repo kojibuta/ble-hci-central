@@ -1,5 +1,5 @@
 {
-  "name": "ble-hci-central",
+  "name": "@kojibuta/ble-hci-central",
   "version": "1.0.0",
   "private": true,
   "main": "index.js",
