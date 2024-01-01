@@ -1,3 +1,7 @@
+# Visual Studio Code
+.vscode
+.vscode-test
+
 # Logs
 logs
 *.log
@@ -96,9 +100,6 @@ dist
 
 # Serverless directories
 .serverless/
-
-# Stores VSCode versions used for testing VSCode extensions
-.vscode-test
 
 # yarn v2
 .yarn/cache
