@@ -14,9 +14,11 @@ using namespace v8;
 Nan::Persistent<v8::FunctionTemplate> HciSocket::constructor;
 
 L2Socket::L2Socket(HciSocket* parent, uint8_t* srcAddr, uint8_t srcType, uint8_t* dstAddr, uint8_t dstType) : _parent(parent), _socket(-1), _handle(0x0fff), _src({}), _dst({}) {
+#ifdef DEBUG
     printf("L2Socket::L2Socket: srcAddr %02x%02x%02x%02x%02x%02x, srcType %u, dstAddr %02x%02x%02x%02x%02x%02x, dstType %u\n",
            srcAddr[5], srcAddr[4], srcAddr[3], srcAddr[2], srcAddr[1], srcAddr[0], srcType,
            dstAddr[5], dstAddr[4], dstAddr[3], dstAddr[2], dstAddr[1], dstAddr[0], dstType);
+#endif
 
     memset(&_src, 0, sizeof(_src));
     _src.l2_family = AF_BLUETOOTH;
@@ -102,11 +104,11 @@ HciSocket::HciSocket() : node::ObjectWrap(), _socket(-1), _deviceId(0), _pollHan
     }
     _socket = fd;
 
-    // int opt = 1;
-    // if (setsockopt(fd, SOL_HCI, HCI_DATA_DIR, &opt, sizeof(opt)) < 0) {
-    //     Nan::ThrowError(Nan::ErrnoException(errno, "setsockopt SOL_HCI HCI_DATA_DIR"));
-    //     return;
-    // }
+    int opt = 1;
+    if (setsockopt(fd, SOL_HCI, HCI_DATA_DIR, &opt, sizeof(opt)) < 0) {
+        Nan::ThrowError(Nan::ErrnoException(errno, "setsockopt SOL_HCI HCI_DATA_DIR"));
+        return;
+    }
 
     // opt = 1;
     // if (setsockopt(fd, SOL_HCI, HCI_TIME_STAMP, &opt, sizeof(opt)) < 0) {
@@ -154,7 +156,9 @@ int HciSocket::bind(int* deviceId) {
 
     _deviceId = a.hci_dev;
 
+#ifdef DEBUG
     printf("HciSocket::bind: deviceId %d\n", _deviceId);
+#endif
 
     if (ioctl(_socket, HCIDEVRESET, _deviceId) < 0) {
         Nan::ThrowError(Nan::ErrnoException(errno, "ioctl HCIDEVRESET"));
@@ -340,8 +344,10 @@ int HciSocket::deviceIdFor(const int* pDeviceId, bool isUp) {
 void HciSocket::l2SocketOnHciRead(char* data, int length) {
     if (length == 22 && data[0] == HCI_EVENT_PKT && data[1] == EVT_LE_META_EVENT && data[2] == 19 && data[3] == EVT_LE_CONN_COMPLETE && data[4] == 0x00) {
         // On HCI Event - LE Meta Event - LE Connection Complete => manually create L2CAP socket or update existing
+#ifdef DEBUG
         printf("HciSocket::l2SocketOnHciRead: evt_type HCI_EVENT_PKT, sub_evt_type EVT_LE_META_EVENT, sub_evt EVT_LE_CONN_COMPLETE\n");
-
+#endif
+        // Data format
         // uint8_t evt_type: HCI_EVENT_PKT (0x04)
         // uint8_t sub_evt_type: EVT_LE_META_EVENT (0x3b)
         // uint8_t pkt_len: (19)
@@ -359,19 +365,18 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
         handle = handle & 0x0fff;  // Remove flags
         uint8_t peerAddrType = data[8] + 1;
         uint8_t* peerAddr = (uint8_t*)(&data[9]);
+#ifdef DEBUG
         uint16_t interval = (data[16] << 8) | data[15];
         uint16_t latency = (data[18] << 8) | data[17];
         uint16_t timeout = (data[20] << 8) | data[19];
-
         printf("HciSocket::l2SocketOnHciRead: handle %u, peerAddrType %u, peerAddr %02x%02x%02x%02x%02x%02x, interval %u, latency %u, timeout %u\n",
                handle, peerAddrType, peerAddr[5], peerAddr[4], peerAddr[3], peerAddr[2], peerAddr[1], peerAddr[0], interval, latency, timeout);
+#endif
 
         std::shared_ptr<L2Socket> l2Socket = nullptr;
         for (int i = 0; i < L2_SOCKETS_MAX; i++) {
             if (_l2Sockets[i] != nullptr) {
                 uint8_t* sockAddr = (uint8_t*)_l2Sockets[i]->_dst.l2_bdaddr.b;
-                // printf("HciSocket::l2SocketOnHciRead: sockAddr %02x%02x%02x%02x%02x%02x\n",
-                //        peerAddr[5], sockAddr[4], sockAddr[3], sockAddr[2], sockAddr[1], sockAddr[0]);
                 if (!memcmp(sockAddr, peerAddr, 6)) {
                     l2Socket = _l2Sockets[i];
                     break;
@@ -380,13 +385,19 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
         }
 
         if (l2Socket != nullptr) {
+#ifdef DEBUG
             printf("HciSocket::l2SocketOnHciRead: socket found (connected %d)\n", l2Socket->connected());
+#endif
             l2Socket->_handle = handle;
         } else {
+#ifdef DEBUG
             printf("HciSocket::l2SocketOnHciRead: socket not found (available %d)\n", _availableL2Sockets);
+#endif
             l2Socket = std::make_shared<L2Socket>(this, _address, _addressType, peerAddr, peerAddrType);
             if (!l2Socket->connected()) {
+#ifdef DEBUG
                 printf("HciSocket::l2SocketOnHciRead: socket not connected\n");
+#endif
                 emitError("L2SocketNotConnected");
                 return;
             }
@@ -401,7 +412,10 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
         }
     } else if (length == 7 && data[0] == HCI_EVENT_PKT && data[1] == EVT_DISCONN_COMPLETE && data[2] == 4 && data[3] == 0x00) {
         // On HCI Event - Disconn Complete => manually destroy L2CAP socket
+#ifdef DEBUG
         printf("HciSocket::l2SocketOnHciRead: evt_type HCI_EVENT_PKT, sub_evt_type EVT_DISCONN_COMPLETE\n");
+#endif
+        // Data format
         // uint8_t evt_type: HCI_EVENT_PKT (0x04)
         // uint8_t sub_evt_type: EVT_DISCONN_COMPLETE (0x05)
         // uint8_t pkt_len: (4)
@@ -411,11 +425,15 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
         uint16_t handle = *((uint16_t*)(&data[4]));
         handle = handle & 0x0fff;  // Remove flags
 
+#ifdef DEBUG
         printf("HciSocket::l2SocketOnHciRead: handle %u\n", handle);
+#endif
 
         for (int i = 0; i < L2_SOCKETS_MAX; i++) {
             if (_l2Sockets[i] != nullptr && _l2Sockets[i]->_handle == handle) {
+#ifdef DEBUG
                 printf("HciSocket::l2SocketOnHciRead: socket found (connected %d)\n", _l2Sockets[i]->connected());
+#endif
                 _l2Sockets[i]->disconnect();
                 _l2Sockets[i] = nullptr;
                 _availableL2Sockets++;
@@ -428,7 +446,10 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
 bool HciSocket::l2SocketOnHciWrite(char* data, int length) {
     if (length == 29 && data[0] == HCI_COMMAND_PKT && ((data[2] << 8) | data[1]) == (OCF_LE_CREATE_CONN | (OGF_LE_CTL << 10)) && data[3] == 25) {
         // On HCI Command - LE Create Conn => manually create L2CAP socket
+#ifdef DEBUG
         printf("HciSocket::l2SocketOnHciWrite: evt_type HCI_COMMAND_PKT, command OCF_LE_CREATE_CONN\n");
+#endif
+        // Data format
         // uint8_t evt_type: HCI_COMMAND_PKT (0x01)
         // uint16_t command: OCF_LE_CREATE_CONN | (OGF_LE_CTL << 10) (0x200d)
         // uint8_t pkt_len: (25)
@@ -444,24 +465,23 @@ bool HciSocket::l2SocketOnHciWrite(char* data, int length) {
         // uint16_t supervision_timeout
         // uint16_t min_ce_length
         // uint16_t max_ce_length
-        uint16_t interval = (data[5] << 8) | data[4];
-        uint16_t window = (data[7] << 8) | data[6];
         uint8_t peerAddrType = data[9] + 1;
         uint8_t* peerAddr = (uint8_t*)(&data[10]);
         uint16_t minInterval = (data[18] << 8) | data[17];
         uint16_t maxInterval = (data[20] << 8) | data[19];
         uint16_t latency = (data[22] << 8) | data[21];
         uint16_t timeout = (data[24] << 8) | data[23];
-
+#ifdef DEBUG
+        uint16_t interval = (data[5] << 8) | data[4];
+        uint16_t window = (data[7] << 8) | data[6];
         printf("HciSocket::l2SocketOnHciWrite: interval %u, window %u, peerAddrType %u, peerAddr %02x%02x%02x%02x%02x%02x, minInterval %u, maxInterval %u, latency %u, timeout %u\n",
                interval, window, peerAddrType, peerAddr[5], peerAddr[4], peerAddr[3], peerAddr[2], peerAddr[1], peerAddr[0], minInterval, maxInterval, latency, timeout);
+#endif
 
         std::shared_ptr<L2Socket> l2Socket = nullptr;
         for (int i = 0; i < L2_SOCKETS_MAX; i++) {
             if (_l2Sockets[i] != nullptr) {
                 uint8_t* sockAddr = (uint8_t*)_l2Sockets[i]->_dst.l2_bdaddr.b;
-                // printf("HciSocket::l2SocketOnHciWrite: sockAddr %02x%02x%02x%02x%02x%02x\n",
-                //        peerAddr[5], sockAddr[4], sockAddr[3], sockAddr[2], sockAddr[1], sockAddr[0]);
                 if (!memcmp(sockAddr, peerAddr, 6)) {
                     l2Socket = _l2Sockets[i];
                     break;
@@ -470,16 +490,22 @@ bool HciSocket::l2SocketOnHciWrite(char* data, int length) {
         }
 
         if (l2Socket != nullptr) {
+#ifdef DEBUG
             printf("HciSocket::l2SocketOnHciWrite: socket found (connected %d)\n", l2Socket->connected());
+#endif
             setConnectionParameters(minInterval, maxInterval, latency, timeout);
             l2Socket->disconnect();
             l2Socket->connect();
         } else if (_availableL2Sockets > 0) {
+#ifdef DEBUG
             printf("HciSocket::l2SocketOnHciWrite: socket not found (available %d)\n", _availableL2Sockets);
+#endif
             setConnectionParameters(minInterval, maxInterval, latency, timeout);
             l2Socket = std::make_shared<L2Socket>(this, _address, _addressType, peerAddr, peerAddrType);
             if (!l2Socket->connected()) {
+#ifdef DEBUG
                 printf("HciSocket::l2SocketOnHciWrite: created socket not connected\n");
+#endif
                 emitError("L2SocketNotConnected");
                 return false;
             }
