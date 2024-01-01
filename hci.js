@@ -535,7 +535,7 @@ class Hci extends EventEmitter {
     // ...
     const ncmd = data.readUInt8(3);
     data = data.subarray(4);
-    for (let icmd = 0; icmd < ncmd; icmd++) {
+    for (let icmd = 0; icmd < ncmd && data.length >= 3; icmd++) {
       // uint16_t opcode;
       // uint8_t status;
       // ...

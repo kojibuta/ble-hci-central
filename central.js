@@ -760,7 +760,7 @@ class Central extends EventEmitter {
         }
       };
       this.on("read", listener);
-      this.readByHandle(address, handle);
+      this.read(address, handle);
     });
   }
 

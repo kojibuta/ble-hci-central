@@ -4,9 +4,10 @@
 
 import events = require("events");
 
+export declare const AttDefs: any;
+export declare const GattDefs: any;
 export declare const HciDefs: any;
 export declare const SmpDefs: any;
-export declare const GattDefs: any;
 
 export declare function availableL2Sockets(): number;
 export declare function setAuth(enabled: boolean): void;

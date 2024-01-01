@@ -1,5 +1,3 @@
-// le-scan-test.js
-
 const {
   OGF_HOST_CTL,
   OCF_RESET,

@@ -1323,7 +1323,12 @@ class Gatt extends EventEmitter {
       // uint8_t opcode = 0x0d;
       // uint8_t data[]; // Part of the value of the attribute with the handle given
       const opcode = data.readUInt8(0);
-      if (opcode !== attOp) return;
+      if (
+        (attOp === ATT_OP_READ_REQ && opcode !== ATT_OP_READ_RESP) ||
+        (attOp === ATT_OP_READ_BLOB_REQ && opcode !== ATT_OP_READ_BLOB_RESP)
+      ) {
+        return;
+      }
       data = data.subarray(1);
 
       value = Buffer.concat([value, data]);
@@ -1443,7 +1448,14 @@ class Gatt extends EventEmitter {
       // uint16_t offset; // The offset of the first octet to be written
       // uint8_t data[]; // The value of the attribute to be written
       const opcode = data.readUInt8(0);
-      if (opcode !== attOp) return;
+      if (
+        (attOp === ATT_OP_PREPARE_WRITE_REQ &&
+          opcode !== ATT_OP_PREPARE_WRITE_RESP) ||
+        (attOp === ATT_OP_EXECUTE_WRITE_REQ &&
+          opcode !== ATT_OP_EXECUTE_WRITE_RESP)
+      ) {
+        return;
+      }
 
       if (opcode === ATT_OP_EXECUTE_WRITE_RESP) {
         if (!withoutResponse) {
