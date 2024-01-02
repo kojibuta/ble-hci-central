@@ -30,10 +30,13 @@ class L2Socket {
    private:
     HciSocket* _parent;
     int _socket;
-    int _errno;
     uint16_t _handle;
     struct sockaddr_l2 _src;
     struct sockaddr_l2 _dst;
+
+   private:
+    int _errno;
+    const char* _syscall;
 };
 
 class HciSocket : public node::ObjectWrap {
