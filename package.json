@@ -1,6 +1,6 @@
 {
   "name": "@kojibuta/ble-hci-central",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "index.js",
   "types": "./index.d.ts",
   "gypfile": true,
@@ -33,6 +33,7 @@
     "nan": "^2.18.0"
   },
   "scripts": {
-    "build": "rm -rf build && node-gyp configure && node-gyp build"
+    "build": "rm -rf build && node-gyp configure --release && node-gyp build",
+    "build-debug": "rm -rf build && node-gyp configure --debug && node-gyp build"
   }
 }

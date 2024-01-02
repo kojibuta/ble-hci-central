@@ -45,15 +45,22 @@ void L2Socket::connect() {
         return;
     }
 
-    if (::bind(_socket, (struct sockaddr*)&_src, sizeof(_src)) < 0) {
+    int rc = ::bind(_socket, (struct sockaddr*)&_src, sizeof(_src));
+    if (rc < 0) {
+#ifdef DEBUG
+        printf("L2Socket::connect: bind %d %s", rc, strerror(errno));
+#endif
         close(_socket);
         _socket = -1;
         return;
     }
 
     // The kernel needs to flush the socket before we continue
-    while (::connect(_socket, (struct sockaddr*)&_dst, sizeof(_dst)) == -1) {
-        if (errno != EINTR) {
+    while ((rc = ::connect(_socket, (struct sockaddr*)&_dst, sizeof(_dst))) < 0) {
+#ifdef DEBUG
+        printf("L2Socket::connect: connect %d %s", rc, strerror(errno));
+#endif
+        if (errno != EINTR && errno != EISCONN) {
             close(_socket);
             _socket = -1;
             break;
