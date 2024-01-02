@@ -271,7 +271,6 @@ class Hci extends EventEmitter {
       this.stop();
     } else if (error.message === "L2SocketNotConnected") {
       // WARNING: this error often requires a system reboot
-      this.stop();
     }
   }
 
