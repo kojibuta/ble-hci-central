@@ -13,7 +13,7 @@ using namespace v8;
 
 Nan::Persistent<v8::FunctionTemplate> HciSocket::constructor;
 
-L2Socket::L2Socket(HciSocket* parent, uint8_t* srcAddr, uint8_t srcType, uint8_t* dstAddr, uint8_t dstType) : _parent(parent), _socket(-1), _handle(0x0fff), _src({}), _dst({}) {
+L2Socket::L2Socket(HciSocket* parent, uint8_t* srcAddr, uint8_t srcType, uint8_t* dstAddr, uint8_t dstType) : _parent(parent), _socket(-1), _errno(0), _handle(0x0fff), _src({}), _dst({}) {
 #ifdef DEBUG
     printf("L2Socket::L2Socket: srcAddr %02x%02x%02x%02x%02x%02x, srcType %u, dstAddr %02x%02x%02x%02x%02x%02x, dstType %u\n",
            srcAddr[5], srcAddr[4], srcAddr[3], srcAddr[2], srcAddr[1], srcAddr[0], srcType,
@@ -42,24 +42,27 @@ L2Socket::~L2Socket() {
 void L2Socket::connect() {
     _socket = socket(PF_BLUETOOTH, SOCK_SEQPACKET, BTPROTO_L2CAP);
     if (_socket < 0) {
+        _errno = errno;
         return;
     }
 
     int rc = ::bind(_socket, (struct sockaddr*)&_src, sizeof(_src));
     if (rc < 0) {
 #ifdef DEBUG
-        printf("L2Socket::connect: bind %d %s", rc, strerror(errno));
+        printf("L2Socket::connect: bind error %d %s", errno, strerror(errno));
 #endif
         close(_socket);
         _socket = -1;
+        _errno = errno;
         return;
     }
 
     // The kernel needs to flush the socket before we continue
     while ((rc = ::connect(_socket, (struct sockaddr*)&_dst, sizeof(_dst))) < 0) {
 #ifdef DEBUG
-        printf("L2Socket::connect: connect %d %s", rc, strerror(errno));
+        printf("L2Socket::connect: connect error %d %s", errno, strerror(errno));
 #endif
+        _errno = errno;
         if (errno != EINTR && errno != EISCONN) {
             close(_socket);
             _socket = -1;
@@ -73,6 +76,7 @@ void L2Socket::disconnect() {
         close(_socket);
     }
     _socket = -1;
+    _errno = errno;
     _handle = 0x0fff;
 }
 
@@ -223,7 +227,7 @@ bool HciSocket::isDeviceUp() {
 
 void HciSocket::setFilter(char* data, int length) {
     if (setsockopt(_socket, SOL_HCI, HCI_FILTER, data, length) < 0) {
-        emitErrnoError("setsockopt SOL_HCI HCI_FILTER");
+        emitErrnoError(errno, "setsockopt(SOL_HCI,HCI_FILTER)");
     }
 }
 
@@ -234,7 +238,7 @@ void HciSocket::setAuth(bool enabled) {
     dr.dev_opt = enabled ? AUTH_ENABLED : AUTH_DISABLED;
 
     if (ioctl(_socket, HCISETAUTH, (unsigned long)&dr) < 0) {
-        emitErrnoError("ioctl HCISETAUTH");
+        emitErrnoError(errno, "ioctl(HCISETAUTH)");
     }
 }
 
@@ -245,7 +249,7 @@ void HciSocket::setEncrypt(bool enabled) {
     dr.dev_opt = enabled ? ENCRYPT_P2P : ENCRYPT_DISABLED;
 
     if (ioctl(_socket, HCISETENCRYPT, (unsigned long)&dr) < 0) {
-        emitErrnoError("ioctl HCISETENCRYPT");
+        emitErrnoError(errno, "ioctl(HCISETENCRYPT)");
     }
 }
 
@@ -278,32 +282,17 @@ void HciSocket::stop() {
     uv_poll_stop(&_pollHandle);
 }
 
-void HciSocket::write_(char* data, int length) {
+void HciSocket::write(char* data, int length) {
     if (l2SocketOnHciWrite(data, length)) {
         return;
     }
-    if (write(_socket, data, length) < 0) {
-        emitErrnoError("write");
+    if (::write(_socket, data, length) < 0) {
+        emitErrnoError(errno, "write");
     }
 }
 
-void HciSocket::emitError(const char* message) {
-    v8::Local<v8::Value> error = Nan::Error(message);
-
-    Local<Value> argv[2] = {
-        Nan::New("error").ToLocalChecked(),
-        error};
-    Nan::AsyncResource res("HciSocket::emitError");
-    res.runInAsyncScope(
-           Nan::New<Object>(this->This),
-           Nan::New("emit").ToLocalChecked(),
-           2,
-           argv)
-        .FromMaybe(v8::Local<v8::Value>());
-}
-
-void HciSocket::emitErrnoError(const char* syscall) {
-    v8::Local<v8::Value> error = Nan::ErrnoException(errno, syscall, strerror(errno));
+void HciSocket::emitErrnoError(int err_no, const char* syscall) {
+    v8::Local<v8::Value> error = Nan::ErrnoException(err_no, syscall, strerror(err_no));
 
     Local<Value> argv[2] = {
         Nan::New("error").ToLocalChecked(),
@@ -405,7 +394,7 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
 #ifdef DEBUG
                 printf("HciSocket::l2SocketOnHciRead: socket not connected\n");
 #endif
-                emitError("L2SocketNotConnected");
+                emitErrnoError(l2Socket->_errno, "L2SocketNotConnected");
                 return;
             }
             l2Socket->_handle = handle;
@@ -513,7 +502,7 @@ bool HciSocket::l2SocketOnHciWrite(char* data, int length) {
 #ifdef DEBUG
                 printf("HciSocket::l2SocketOnHciWrite: created socket not connected\n");
 #endif
-                emitError("L2SocketNotConnected");
+                emitErrnoError(l2Socket->_errno, "L2SocketNotConnected");
                 return false;
             }
             for (int i = 0; i < L2_SOCKETS_MAX; i++) {
@@ -639,7 +628,7 @@ NAN_METHOD(HciSocket::Write) {
     if (info.Length() > 0) {
         Local<Value> arg0 = info[0];
         if (arg0->IsObject()) {
-            p->write_(node::Buffer::Data(arg0), node::Buffer::Length(arg0));
+            p->write(node::Buffer::Data(arg0), node::Buffer::Length(arg0));
         }
     }
     info.GetReturnValue().SetUndefined();

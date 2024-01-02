@@ -269,7 +269,7 @@ class Hci extends EventEmitter {
 
     if (error.code === "EPERM" || error.message === "Network is down") {
       this.stop();
-    } else if (error.message === "L2SocketNotConnected") {
+    } else if (error.syscall === "L2SocketNotConnected") {
       // WARNING: this error often requires a system reboot
     }
   }

@@ -30,6 +30,7 @@ class L2Socket {
    private:
     HciSocket* _parent;
     int _socket;
+    int _errno;
     uint16_t _handle;
     struct sockaddr_l2 _src;
     struct sockaddr_l2 _dst;
@@ -63,10 +64,9 @@ class HciSocket : public node::ObjectWrap {
     void setAuth(bool enabled);
     void setEncrypt(bool enabled);
     void stop();
-    void write_(char* data, int length);
+    void write(char* data, int length);
     void poll();
-    void emitError(const char* message);
-    void emitErrnoError(const char* syscall);
+    void emitErrnoError(int err_no, const char* syscall);
     int deviceIdFor(const int* deviceId, bool isUp);
     void l2SocketOnHciRead(char* data, int length);
     bool l2SocketOnHciWrite(char* data, int length);
