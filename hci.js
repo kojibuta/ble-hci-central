@@ -7,6 +7,7 @@ const { EventEmitter } = require("node:events");
 const os = require("node:os");
 
 const { addressToBuffer, bufferToAddress } = require("./common.js");
+const { ENOMEM, ENOSYS } = require("./errno-defs.js");
 const {
   ACL_START,
   ACL_CONT,
@@ -269,7 +270,7 @@ class Hci extends EventEmitter {
 
     if (error.code === "EPERM" || error.message === "Network is down") {
       this.stop();
-    } else if (error.syscall === "L2SocketNotConnected") {
+    } else if (error.errno === ENOSYS || error.errno === ENOMEM) {
       // WARNING: this error often requires a system reboot
     }
   }

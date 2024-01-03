@@ -15,7 +15,7 @@ Nan::Persistent<v8::FunctionTemplate> HciSocket::constructor;
 
 L2Socket::L2Socket(HciSocket* parent, uint8_t* srcAddr, uint8_t srcType, uint8_t* dstAddr, uint8_t dstType) : _parent(parent), _socket(-1), _handle(0x0fff), _src({}), _dst({}), _errno(0), _syscall("") {
 #ifdef DEBUG
-    printf("L2Socket::L2Socket: srcAddr %02x%02x%02x%02x%02x%02x, srcType %u, dstAddr %02x%02x%02x%02x%02x%02x, dstType %u\n",
+    printf("[L2Socket::L2Socket] srcAddr %02x%02x%02x%02x%02x%02x, srcType %u, dstAddr %02x%02x%02x%02x%02x%02x, dstType %u\n",
            srcAddr[5], srcAddr[4], srcAddr[3], srcAddr[2], srcAddr[1], srcAddr[0], srcType,
            dstAddr[5], dstAddr[4], dstAddr[3], dstAddr[2], dstAddr[1], dstAddr[0], dstType);
 #endif
@@ -43,48 +43,73 @@ void L2Socket::connect() {
     _socket = socket(PF_BLUETOOTH, SOCK_SEQPACKET, BTPROTO_L2CAP);
     if (_socket < 0) {
 #ifdef DEBUG
-        printf("L2Socket::connect: socket error %d %s\n", errno, strerror(errno));
+        printf("[L2Socket::connect] socket() %d %s\n", errno, strerror(errno));
 #endif
         _errno = errno;
-        _syscall = "L2Socket::connect socket";
+        _syscall = "socket@L2Socket::connect";
         return;
     }
 
     int rc = ::bind(_socket, (struct sockaddr*)&_src, sizeof(_src));
     if (rc < 0) {
 #ifdef DEBUG
-        printf("L2Socket::connect: bind error %d %s\n", errno, strerror(errno));
+        printf("[L2Socket::connect] bind() %d %s\n", errno, strerror(errno));
 #endif
         _errno = errno;
-        _syscall = "L2Socket::connect bind";
+        _syscall = "bind@L2Socket::connect";
         close(_socket);
         _socket = -1;
         return;
     }
 
-    // The kernel needs to flush the socket before we continue
-    while ((rc = ::connect(_socket, (struct sockaddr*)&_dst, sizeof(_dst))) < 0) {
+    struct l2cap_options opts = {};
+    memset(&opts, 0, sizeof(opts));
+    socklen_t len = sizeof(opts);
+
+    rc = getsockopt(_socket, SOL_L2CAP, L2CAP_OPTIONS, &opts, &len);
+    if (rc < 0) {
 #ifdef DEBUG
-        printf("L2Socket::connect: connect error %d %s\n", errno, strerror(errno));
+        printf("[L2Socket::connect] getsockopt(SOL_L2CAP,L2CAP_OPTIONS) %d %s\n", errno, strerror(errno));
 #endif
         _errno = errno;
-        _syscall = "L2Socket::connect connect";
-        if (errno != EINTR && errno != EISCONN) {
+        _syscall = "getsockopt@L2Socket::connect";
+        close(_socket);
+        _socket = -1;
+        return;
+    }
+#ifdef DEBUG
+    printf("[L2Socket::connect] omtu %d, imtu %d, flush_to %d, mode %d, fcs %d, max_tx %d, txwin_size %d\n",
+           opts.omtu, opts.imtu, opts.flush_to, opts.mode, opts.fcs, opts.max_tx, opts.txwin_size);
+#endif
+
+    // WARNING: sends OCF_LE_CREATE_CONN to controller
+    while ((rc = ::connect(_socket, (struct sockaddr*)&_dst, sizeof(_dst))) < 0) {
+#ifdef DEBUG
+        printf("[L2Socket::connect] connect() %d %s\n", errno, strerror(errno));
+#endif
+        _errno = errno;
+        _syscall = "connect@L2Socket::connect";
+        if (errno == EISCONN) {
+            return;
+        } else if (errno != EINTR) {
             close(_socket);
             _socket = -1;
-            break;
+            return;
         }
     }
+
+    _errno = 0;
+    _syscall = "";
 }
 
 void L2Socket::disconnect() {
     if (_socket != -1) {
         if (close(_socket) < 0) {
 #ifdef DEBUG
-            printf("L2Socket::disconnect: close error %d %s\n", errno, strerror(errno));
+            printf("[L2Socket::disconnect] close() %d %s\n", errno, strerror(errno));
 #endif
             _errno = errno;
-            _syscall = "L2Socket::disconnect close";
+            _syscall = "close@L2Socket::disconnect";
         }
     }
     _socket = -1;
@@ -121,20 +146,20 @@ HciSocket::HciSocket() : node::ObjectWrap(), _socket(-1), _deviceId(0), _pollHan
 
     int fd = socket(AF_BLUETOOTH, SOCK_RAW | SOCK_CLOEXEC, BTPROTO_HCI);
     if (fd < 0) {
-        Nan::ThrowError(Nan::ErrnoException(errno, "socket"));
+        Nan::ThrowError(Nan::ErrnoException(errno, "socket@HciSocket::HciSocket"));
         return;
     }
     _socket = fd;
 
     // int opt = 1;
     // if (setsockopt(fd, SOL_HCI, HCI_DATA_DIR, &opt, sizeof(opt)) < 0) {
-    //     Nan::ThrowError(Nan::ErrnoException(errno, "setsockopt(SOL_HCI,HCI_DATA_DIR)"));
+    //     Nan::ThrowError(Nan::ErrnoException(errno, "setsockopt(SOL_HCI,HCI_DATA_DIR)@HciSocket::HciSocket"));
     //     return;
     // }
 
     // opt = 1;
     // if (setsockopt(fd, SOL_HCI, HCI_TIME_STAMP, &opt, sizeof(opt)) < 0) {
-    //     Nan::ThrowError(Nan::ErrnoException(errno, "setsockopt SOL_HCI HCI_TIME_STAMP"));
+    //     Nan::ThrowError(Nan::ErrnoException(errno, "setsockopt(SOL_HCI,HCI_TIME_STAMP)@HciSocket::HciSocket"));
     //     return;
     // }
 
@@ -179,26 +204,26 @@ int HciSocket::bind(int* deviceId) {
     _deviceId = a.hci_dev;
 
 #ifdef DEBUG
-    printf("HciSocket::bind: deviceId %d\n", _deviceId);
+    printf("[HciSocket::bind] deviceId %d\n", _deviceId);
 #endif
 
     if (ioctl(_socket, HCIDEVRESET, _deviceId) < 0) {
-        Nan::ThrowError(Nan::ErrnoException(errno, "ioctl HCIDEVRESET"));
+        Nan::ThrowError(Nan::ErrnoException(errno, "ioctl(HCIDEVRESET)@HciSocket::bind"));
         return -1;
     }
 
     if (ioctl(_socket, HCIDEVDOWN, _deviceId) < 0) {
-        Nan::ThrowError(Nan::ErrnoException(errno, "ioctl HCIDEVDOWN"));
+        Nan::ThrowError(Nan::ErrnoException(errno, "ioctl(HCIDEVDOWN)@HciSocket::bind"));
         return -1;
     }
 
     if (ioctl(_socket, HCIDEVUP, _deviceId) < 0) {
-        Nan::ThrowError(Nan::ErrnoException(errno, "ioctl HCIDEVUP"));
+        Nan::ThrowError(Nan::ErrnoException(errno, "ioctl(HCIDEVUP)@HciSocket::bind"));
         return -1;
     }
 
     if (::bind(_socket, (struct sockaddr*)&a, sizeof(a)) < 0) {
-        Nan::ThrowError(Nan::ErrnoException(errno, "bind"));
+        Nan::ThrowError(Nan::ErrnoException(errno, "bind@HciSocket::bind"));
         return -1;
     }
 
@@ -209,7 +234,7 @@ int HciSocket::bind(int* deviceId) {
     _addressType = 0;
 
     if (ioctl(_socket, HCIGETDEVINFO, (void*)&di) < 0) {
-        Nan::ThrowError(Nan::ErrnoException(errno, "ioctl HCIGETDEVINFO"));
+        Nan::ThrowError(Nan::ErrnoException(errno, "ioctl(HCIGETDEVINFO)@HciSocket::bind"));
         return -1;
     }
 
@@ -238,7 +263,7 @@ bool HciSocket::isDeviceUp() {
 
 void HciSocket::setFilter(char* data, int length) {
     if (setsockopt(_socket, SOL_HCI, HCI_FILTER, data, length) < 0) {
-        emitErrnoError(errno, "setsockopt(SOL_HCI,HCI_FILTER)");
+        emitErrnoError(errno, "setsockopt(SOL_HCI,HCI_FILTER)@HciSocket::setFilter");
     }
 }
 
@@ -249,7 +274,7 @@ void HciSocket::setAuth(bool enabled) {
     dr.dev_opt = enabled ? AUTH_ENABLED : AUTH_DISABLED;
 
     if (ioctl(_socket, HCISETAUTH, (unsigned long)&dr) < 0) {
-        emitErrnoError(errno, "ioctl(HCISETAUTH)");
+        emitErrnoError(errno, "ioctl(HCISETAUTH)@HciSocket::setAuth");
     }
 }
 
@@ -260,7 +285,7 @@ void HciSocket::setEncrypt(bool enabled) {
     dr.dev_opt = enabled ? ENCRYPT_P2P : ENCRYPT_DISABLED;
 
     if (ioctl(_socket, HCISETENCRYPT, (unsigned long)&dr) < 0) {
-        emitErrnoError(errno, "ioctl(HCISETENCRYPT)");
+        emitErrnoError(errno, "ioctl(HCISETENCRYPT)@HciSocket::setEncrypt");
     }
 }
 
@@ -298,7 +323,7 @@ void HciSocket::write(char* data, int length) {
         return;
     }
     if (::write(_socket, data, length) < 0) {
-        emitErrnoError(errno, "write");
+        emitErrnoError(errno, "write@HciSocket::write");
     }
 }
 
@@ -352,7 +377,7 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
     if (length == 22 && data[0] == HCI_EVENT_PKT && data[1] == EVT_LE_META_EVENT && data[2] == 19 && data[3] == EVT_LE_CONN_COMPLETE && data[4] == 0x00) {
         // On HCI Event - LE Meta Event - LE Connection Complete => manually create L2CAP socket or update existing
 #ifdef DEBUG
-        printf("HciSocket::l2SocketOnHciRead: evt_type HCI_EVENT_PKT, sub_evt_type EVT_LE_META_EVENT, sub_evt EVT_LE_CONN_COMPLETE\n");
+        printf("[HciSocket::l2SocketOnHciRead] evt_type HCI_EVENT_PKT, sub_evt_type EVT_LE_META_EVENT, sub_evt EVT_LE_CONN_COMPLETE\n");
 #endif
         // Data format
         // uint8_t evt_type: HCI_EVENT_PKT (0x04)
@@ -376,7 +401,7 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
         uint16_t interval = (data[16] << 8) | data[15];
         uint16_t latency = (data[18] << 8) | data[17];
         uint16_t timeout = (data[20] << 8) | data[19];
-        printf("HciSocket::l2SocketOnHciRead: handle %u, peerAddrType %u, peerAddr %02x%02x%02x%02x%02x%02x, interval %u, latency %u, timeout %u\n",
+        printf("[HciSocket::l2SocketOnHciRead] handle %u, peerAddrType %u, peerAddr %02x%02x%02x%02x%02x%02x, interval %u, latency %u, timeout %u\n",
                handle, peerAddrType, peerAddr[5], peerAddr[4], peerAddr[3], peerAddr[2], peerAddr[1], peerAddr[0], interval, latency, timeout);
 #endif
 
@@ -393,17 +418,17 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
 
         if (l2Socket != nullptr) {
 #ifdef DEBUG
-            printf("HciSocket::l2SocketOnHciRead: socket found (connected %d)\n", l2Socket->connected());
+            printf("[HciSocket::l2SocketOnHciRead] socket found (connected %d)\n", l2Socket->connected());
 #endif
             l2Socket->_handle = handle;
         } else {
 #ifdef DEBUG
-            printf("HciSocket::l2SocketOnHciRead: socket not found (available %d)\n", _availableL2Sockets);
+            printf("[HciSocket::l2SocketOnHciRead] socket not found (available %d)\n", _availableL2Sockets);
 #endif
             l2Socket = std::make_shared<L2Socket>(this, _address, _addressType, peerAddr, peerAddrType);
             if (!l2Socket->connected()) {
 #ifdef DEBUG
-                printf("HciSocket::l2SocketOnHciRead: socket not connected\n");
+                printf("[HciSocket::l2SocketOnHciRead] socket not connected\n");
 #endif
                 emitErrnoError(l2Socket->_errno, l2Socket->_syscall);
                 return;
@@ -420,7 +445,7 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
     } else if (length == 7 && data[0] == HCI_EVENT_PKT && data[1] == EVT_DISCONN_COMPLETE && data[2] == 4 && data[3] == 0x00) {
         // On HCI Event - Disconn Complete => manually destroy L2CAP socket
 #ifdef DEBUG
-        printf("HciSocket::l2SocketOnHciRead: evt_type HCI_EVENT_PKT, sub_evt_type EVT_DISCONN_COMPLETE\n");
+        printf("[HciSocket::l2SocketOnHciRead] evt_type HCI_EVENT_PKT, sub_evt_type EVT_DISCONN_COMPLETE\n");
 #endif
         // Data format
         // uint8_t evt_type: HCI_EVENT_PKT (0x04)
@@ -433,13 +458,13 @@ void HciSocket::l2SocketOnHciRead(char* data, int length) {
         handle = handle & 0x0fff;  // Remove flags
 
 #ifdef DEBUG
-        printf("HciSocket::l2SocketOnHciRead: handle %u\n", handle);
+        printf("[HciSocket::l2SocketOnHciRead] handle %u\n", handle);
 #endif
 
         for (int i = 0; i < L2_SOCKETS_MAX; i++) {
             if (_l2Sockets[i] != nullptr && _l2Sockets[i]->_handle == handle) {
 #ifdef DEBUG
-                printf("HciSocket::l2SocketOnHciRead: socket found (connected %d)\n", _l2Sockets[i]->connected());
+                printf("[HciSocket::l2SocketOnHciRead] socket found (connected %d)\n", _l2Sockets[i]->connected());
 #endif
                 _l2Sockets[i]->disconnect();
                 _l2Sockets[i] = nullptr;
@@ -454,7 +479,7 @@ bool HciSocket::l2SocketOnHciWrite(char* data, int length) {
     if (length == 29 && data[0] == HCI_COMMAND_PKT && ((data[2] << 8) | data[1]) == (OCF_LE_CREATE_CONN | (OGF_LE_CTL << 10)) && data[3] == 25) {
         // On HCI Command - LE Create Conn => manually create L2CAP socket
 #ifdef DEBUG
-        printf("HciSocket::l2SocketOnHciWrite: evt_type HCI_COMMAND_PKT, command OCF_LE_CREATE_CONN\n");
+        printf("[HciSocket::l2SocketOnHciWrite] evt_type HCI_COMMAND_PKT, command OCF_LE_CREATE_CONN\n");
 #endif
         // Data format
         // uint8_t evt_type: HCI_COMMAND_PKT (0x01)
@@ -481,7 +506,7 @@ bool HciSocket::l2SocketOnHciWrite(char* data, int length) {
 #ifdef DEBUG
         uint16_t interval = (data[5] << 8) | data[4];
         uint16_t window = (data[7] << 8) | data[6];
-        printf("HciSocket::l2SocketOnHciWrite: interval %u, window %u, peerAddrType %u, peerAddr %02x%02x%02x%02x%02x%02x, minInterval %u, maxInterval %u, latency %u, timeout %u\n",
+        printf("[HciSocket::l2SocketOnHciWrite] interval %u, window %u, peerAddrType %u, peerAddr %02x%02x%02x%02x%02x%02x, minInterval %u, maxInterval %u, latency %u, timeout %u\n",
                interval, window, peerAddrType, peerAddr[5], peerAddr[4], peerAddr[3], peerAddr[2], peerAddr[1], peerAddr[0], minInterval, maxInterval, latency, timeout);
 #endif
 
@@ -498,20 +523,20 @@ bool HciSocket::l2SocketOnHciWrite(char* data, int length) {
 
         if (l2Socket != nullptr) {
 #ifdef DEBUG
-            printf("HciSocket::l2SocketOnHciWrite: socket found (connected %d)\n", l2Socket->connected());
+            printf("[HciSocket::l2SocketOnHciWrite] socket found (connected %d)\n", l2Socket->connected());
 #endif
             setConnectionParameters(minInterval, maxInterval, latency, timeout);
             l2Socket->disconnect();
             l2Socket->connect();
         } else if (_availableL2Sockets > 0) {
 #ifdef DEBUG
-            printf("HciSocket::l2SocketOnHciWrite: socket not found (available %d)\n", _availableL2Sockets);
+            printf("[HciSocket::l2SocketOnHciWrite] socket not found (available %d)\n", _availableL2Sockets);
 #endif
             setConnectionParameters(minInterval, maxInterval, latency, timeout);
             l2Socket = std::make_shared<L2Socket>(this, _address, _addressType, peerAddr, peerAddrType);
             if (!l2Socket->connected()) {
 #ifdef DEBUG
-                printf("HciSocket::l2SocketOnHciWrite: created socket not connected\n");
+                printf("[HciSocket::l2SocketOnHciWrite] socket not connected\n");
 #endif
                 emitErrnoError(l2Socket->_errno, l2Socket->_syscall);
                 return false;

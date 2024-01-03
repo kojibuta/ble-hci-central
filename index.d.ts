@@ -5,6 +5,7 @@
 import events = require("events");
 
 export declare const AttDefs: any;
+export declare const ErrnoDefs: any;
 export declare const GattDefs: any;
 export declare const HciDefs: any;
 export declare const SmpDefs: any;

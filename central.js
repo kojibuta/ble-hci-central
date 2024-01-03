@@ -48,6 +48,7 @@ class Central extends EventEmitter {
   }
 
   AttDefs = require("./att-defs.js");
+  ErrnoDefs = require("./errno-defs.js");
   GattDefs = require("./gatt-defs.js");
   HciDefs = require("./hci-defs.js");
   SmpDefs = require("./smp-defs.js");
